@@ -50,7 +50,6 @@ CHSV dynamicHue = CHSV(0, 255, 255);
 
 
 // -------------------- STARTUP -------------------- //
-// runs once on arduino startup
 void setup() 
 {
   // clear LEDs
@@ -70,7 +69,6 @@ void setup()
 
 
 // -------------------- MAIN LOOP -------------------- //
-// runs constantly
 void loop()
 {
   // handle IR signals
@@ -95,92 +93,6 @@ void loop()
 }
 
 
-
-
-// -------------------- HELPER FUNCTIONS -------------------- //
-
-/*
- * IRHandler is responsible for detecting IR remote signals and
- * responding accordingly. Note that when the FastLED library is
- * active and updating (with FastLED.show), it blocks interrupts
- * causing jumbled signals. I implemented behavior to combat this:
- * 
- * pressing ANY button while ledStatus = 1 (LEDs active) results
- * in a jumbled invalid signal. This signal triggers the default
- * case and turns the LEDs off. From here, a valid signal will
- * start the specifed mode and turn the LEDs on (ledStatus = 1)
- * 
- * USAGE: 
- * when LEDs are off, pressing any of the mode buttons will start that mode. 
- * when LEDs are on, pressing any button will turn the LEDs off.
- */
-void IRHandler()
-{
-  switch(results.value)
-  {
-    case 0xFFFFFFFF: break;  // Repeat
-    case 0xFFA25D: break;    // Power
-    case 0xFFE21D: break;    // Func/Stop
-    case 0xFF9867: break;    // EQ
-    case 0xFFB04F: break;    // ST/REPT
-    case 0xFFC23D: break;    // Skip Forward
-    case 0xFF22DD: break;    // Skip Back
-    case 0xFF02FD: break;    // Play/Pause
-    case 0xFF906F: break;    // Arrow Up
-    case 0xFFE01F: break;    // Arrow Down
-    case 0xFF629D: break;    // Vol Up
-    case 0xFFA857: break;    // Vol Down
-    
-    case 0xFF6897: ledMode = 0; ledStatus = 1; break; // 0 - Red
-    case 0xFF30CF: ledMode = 1; ledStatus = 1; break; // 1 - RedDimmed
-    case 0xFF18E7: ledMode = 2; ledStatus = 1; break; // 2
-    case 0xFF7A85: ledMode = 3; ledStatus = 1; break; // 3
-    case 0xFF10EF: ledMode = 4; ledStatus = 1; break; // 4
-    case 0xFF38C7: ledMode = 5; ledStatus = 1; break; // 5
-    case 0xFF5AA5: ledMode = 6; ledStatus = 1; break; // 6
-    case 0xFF42BD: ledMode = 7; ledStatus = 1; break; // 7
-    case 0xFF4AB5: ledMode = 8; ledStatus = 1; break; // 8 - MellowVisualizer
-    case 0xFF52AD: ledMode = 9; ledStatus = 1; break; // 9 - DynamicVisualizer
-    
-    default:
-      Off();
-      ledStatus = 0;   
-  }
-  // prevent repeated signals
-  delay(100); 
-}
-
-
-// turn all LEDs off
-void Off()
-{
-  FastLED.clear();
-  FastLED.show();
-}
-
-
-// shifts dynamicHue by the given strength value
-void dynamicHueShift(int strength)
-{
-  for (int i = strength; i > 0; i--)
-  {
-    if (dynamicHue.hue == 255)
-      dynamicHue.hue = 0;
-    else
-      dynamicHue.hue++;
-  }
-}
-
-
-// shifts LEDs outward by one from the center LED towards the specified bounds
-// paramters should be the index of the specified leds within leds[]
-void outwardShift(int centerLED, int upperBound, int lowerBound)
-{
-  for (int i = lowerBound; i < centerLED; i++)
-    leds[i] = leds[i+1];
-  for (int i = upperBound; i > centerLED; i--)
-    leds[i] = leds[i-1];
-}
 
 
 // -------------------- LED SEQUENCES -------------------- //
@@ -288,4 +200,92 @@ void MellowVisualizer()
 
     FastLED.show();
   }
+}
+
+
+
+
+// -------------------- HELPER FUNCTIONS -------------------- //
+
+/*
+ * IRHandler is responsible for detecting IR remote signals and
+ * responding accordingly. Note that when the FastLED library is
+ * active and updating (with FastLED.show), it blocks interrupts
+ * causing jumbled signals. I implemented behavior to combat this:
+ * 
+ * pressing ANY button while ledStatus = 1 (LEDs active) results
+ * in a jumbled invalid signal. This signal triggers the default
+ * case and turns the LEDs off. From here, a valid signal will
+ * start the specifed mode and turn the LEDs on (ledStatus = 1)
+ * 
+ * USAGE: 
+ * when LEDs are off, pressing any of the mode buttons will start that mode. 
+ * when LEDs are on, pressing any button will turn the LEDs off.
+ */
+void IRHandler()
+{
+  switch(results.value)
+  {
+    case 0xFFFFFFFF: break;  // Repeat
+    case 0xFFA25D: break;    // Power
+    case 0xFFE21D: break;    // Func/Stop
+    case 0xFF9867: break;    // EQ
+    case 0xFFB04F: break;    // ST/REPT
+    case 0xFFC23D: break;    // Skip Forward
+    case 0xFF22DD: break;    // Skip Back
+    case 0xFF02FD: break;    // Play/Pause
+    case 0xFF906F: break;    // Arrow Up
+    case 0xFFE01F: break;    // Arrow Down
+    case 0xFF629D: break;    // Vol Up
+    case 0xFFA857: break;    // Vol Down
+    
+    case 0xFF6897: ledMode = 0; ledStatus = 1; break; // 0 - Red
+    case 0xFF30CF: ledMode = 1; ledStatus = 1; break; // 1 - RedDimmed
+    case 0xFF18E7: ledMode = 2; ledStatus = 1; break; // 2
+    case 0xFF7A85: ledMode = 3; ledStatus = 1; break; // 3
+    case 0xFF10EF: ledMode = 4; ledStatus = 1; break; // 4
+    case 0xFF38C7: ledMode = 5; ledStatus = 1; break; // 5
+    case 0xFF5AA5: ledMode = 6; ledStatus = 1; break; // 6
+    case 0xFF42BD: ledMode = 7; ledStatus = 1; break; // 7
+    case 0xFF4AB5: ledMode = 8; ledStatus = 1; break; // 8 - MellowVisualizer
+    case 0xFF52AD: ledMode = 9; ledStatus = 1; break; // 9 - DynamicVisualizer
+    
+    default:
+      Off();
+      ledStatus = 0;   
+  }
+  // prevent repeated signals
+  delay(100); 
+}
+
+
+// turn all LEDs off
+void Off()
+{
+  FastLED.clear();
+  FastLED.show();
+}
+
+
+// shifts dynamicHue by the given strength value
+void dynamicHueShift(int strength)
+{
+  for (int i = strength; i > 0; i--)
+  {
+    if (dynamicHue.hue == 255)
+      dynamicHue.hue = 0;
+    else
+      dynamicHue.hue++;
+  }
+}
+
+
+// shifts LEDs outward by one from the center LED towards the specified bounds
+// paramters should be the index of the specified leds within leds[]
+void outwardShift(int centerLED, int upperBound, int lowerBound)
+{
+  for (int i = lowerBound; i < centerLED; i++)
+    leds[i] = leds[i+1];
+  for (int i = upperBound; i > centerLED; i--)
+    leds[i] = leds[i-1];
 }

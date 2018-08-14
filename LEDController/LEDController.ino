@@ -34,15 +34,19 @@
 // control globals
 CRGB leds[NUM_LEDS];        // 0-99: back LEDs (bottom right moving CC); 100-111: GPU LEDs (left to right)
 byte audioIn = 0;           // processed audio signal normalized to range 0-255
-byte ledMode = 10;          // determines which LED sequence to run (if ledStatus = 1) -> 10 = BootSequence
+byte ledMode = 0;           // determines which LED sequence to run (if ledStatus = 1) -> 10 = BootSequence
 byte ledStatus = 1;         // 1 = on; 0 = off
+byte ledBrightness = 255;   // global LED brightness, used in the brightness control functions
 
 // IR remote globals
 IRrecv irrecv(IR_PIN);
 decode_results results;
 
-// dynamic LED sequence globals
-CHSV dynamicHue = CHSV(0, 255, 255);
+// stores the current global hue/sat/val for rainbow effects - See dynamicHueShift();
+// modes that use this global typically call dynamicHueShift() to shift hue/sat/val every loop before applying to LEDs
+CHSV dynamicHue = CHSV(0, 255, 255);    
+
+
 
 
 // -------------------- STARTUP -------------------- //
@@ -80,8 +84,7 @@ void loop()
   if (ledStatus == 1)
   {
     // run mode specified by ledMode
-    if (ledMode == 10)     {BootSequence();}
-    else if (ledMode == 0) {Red();}
+    if (ledMode == 0)      {Red();}
     else if (ledMode == 1) {RedDimmed();}
     else if (ledMode == 8) {MellowVisualizer();}
     else if (ledMode == 9) {DynamicVisualizer();}
@@ -110,7 +113,6 @@ void loop()
  * USAGE: 
  * when LEDs are off, pressing any of the mode buttons will start that mode. 
  * when LEDs are on, pressing any button will turn the LEDs off.
- * 
  */
 void IRHandler()
 {
@@ -157,59 +159,31 @@ void Off()
 }
 
 
+// shifts dynamicHue by the given strength value
+void dynamicHueShift(int strength)
+{
+  for (int i = strength; i > 0; i--)
+  {
+    if (dynamicHue.hue == 255)
+      dynamicHue.hue = 0;
+    else
+      dynamicHue.hue++;
+  }
+}
+
+
+// shifts LEDs outward by one from the center LED towards the specified bounds
+// paramters should be the index of the specified leds within leds[]
+void outwardShift(int centerLED, int upperBound, int lowerBound)
+{
+  for (int i = lowerBound; i < centerLED; i++)
+    leds[i] = leds[i+1];
+  for (int i = upperBound; i > centerLED; i--)
+    leds[i] = leds[i-1];
+}
 
 
 // -------------------- LED SEQUENCES -------------------- //
-
-
-// sequence that runs on arduino startup
-void BootSequence()
-{
-  Off();
-  delay(200);
-  
-  // slowly increase red brightness of back LEDs
-  for (int i = 0; i < 255; i++)
-  {
-    for (int j = 0; j < 99; j++)
-    {
-      if (leds[j].red + 1 > 255)
-        leds[j].red = 255;
-      else
-        leds[j].red += 1;
-    }
-
-    // begin increasing red brightness of GPU LEDs after 10 loops
-    if (i > 10)
-    {
-      for (int j = 100; j < 112; j++)
-      {
-        if (leds[j].red + 1 > 255)
-          leds[j].red = 255;
-        else
-          leds[j].red += 1;
-      }
-    }
-    delay(10);
-    FastLED.show();
-  }
-
-  //finish GPU animation
-  for (int i = 0; i < 10; i++)
-  {
-    for (int j = 100; j < 112; j++)
-    {
-      if (leds[j].red + 1 > 255)
-        leds[j].red = 255;
-      else
-        leds[j].red += 1;
-    }
-    FastLED.show();
-  }
-
-  // transition to Red() LED mode
-  ledMode = 0;
-}
 
 
 // simple all-red preset
@@ -222,6 +196,7 @@ void Red()
   
 	FastLED.show();
 }
+
 
 // simple all-red preset (dimmed)
 void RedDimmed()
@@ -249,68 +224,35 @@ void DynamicVisualizer()
     audioIn = Serial.read();
 
     // shift LEDs away from the center LED (37)
-    for (int i = 0; i < 37; i++)
-      leds[i] = leds[i+1];
-    for (int i = 74; i > 37; i--)
-      leds[i] = leds[i-1];
+    outwardShift(37, 74, 0);
 
-    // normalize audioIn to get closer to 255
+    // scale audioIn for better visuals
     if (audioIn*2 > 255)
       audioIn = 255;
     else
       audioIn *= 2;
 
-
-    // shift the dynamic hue by a factor of the audioIn strength
+    // shifting hue by a factor of audioIn causes colors to shift faster with higher audioIn values
     if (audioIn > 240)
-    {
-      for (int i = audioIn/15; i > 0; i--)
-      {
-        if (dynamicHue.hue == 255)
-          dynamicHue.hue = 0;
-        else
-          dynamicHue.hue++;
-      }
-    }
-
+      dynamicHueShift(audioIn/15);
     else
-    {
-      for (int i = audioIn/100; i > 0; i--)
-      {
-        if (dynamicHue.hue == 255)
-          dynamicHue.hue = 0;
-        else
-          dynamicHue.hue++;
-      }
-    }
+      dynamicHueShift(audioIn/100);
 
-    // apply brightness adjustment
+    // brightness is directly related to audioIn strength
     dynamicHue.val = audioIn;
 
     // set center LED
     leds[37] = dynamicHue;
-    
-    if (leds[100].red + audioIn/5 <= 255)
+
+    // sudo "bass reactive" GPU LEDs through additive lighting
+    // additive lighting usually reacts more to drawn-out noise (bass frequencies)
+    for (int i = 75; i < 112; i++)
     {
-      for (int i = 75; i < 112; i++)        
-        leds[i].red += audioIn/5;
+      leds[i] += CRGB(audioIn/5, 0, 0);   // additive factor of audioIn
+      leds[i] -= CRGB(8, 0, 0);           // reductive constant
     }
     
-    else
-    {
-      for (int i = 75; i < 112; i++)        
-        leds[i].red = 255;
-    }
-       
     FastLED.show();
-
-    if (leds[100].red < 8 )
-      for (int i = 75; i < 112; i++)
-        leds[i] = CRGB(0, 0, 0);
-
-    if (leds[100].red > 0)
-      for (int i = 75; i < 112; i++)
-        leds[i].red -= 8;
   }
 }
 
@@ -321,41 +263,29 @@ void MellowVisualizer()
 {
   if (Serial.available())
   {
+    // audioIn is typically a value from 0-127 (but can be as high as 255)
     audioIn = Serial.read();
-    int centerLED = 37;
 
-    for (int i = 0; i < centerLED; i++)
-      leds[i].red = leds[i+1].red;
-    for (int i = 74; i > centerLED; i--)
-      leds[i].red = leds[i-1].red;
+    // shift LEDs away from the center LED (37)
+    outwardShift(37, 74, 0);
 
+    // scale audioIn for better visuals
     if (audioIn*2 > 255)
       audioIn = 255;
     else
       audioIn *= 2;
 
-    leds[centerLED].red = audioIn;
+    // set center LED
+    leds[37].red = audioIn;
 
-    if (leds[100].red + audioIn/5 <= 255)
+    // sudo "bass reactive" GPU LEDs through additive lighting
+    // additive lighting usually reacts more to drawn-out noise (bass frequencies)
+    for (int i = 75; i < 112; i++)
     {
-      for (int i = 100; i < 112; i++)        
-        leds[i].red += audioIn/5;
+      leds[i] += CRGB(audioIn/5, 0, 0);   // additive factor of audioIn
+      leds[i] -= CRGB(8, 0, 0);           // reductive constant
     }
-    
-    else
-    {
-      for (int i = 100; i < 112; i++)        
-        leds[i].red = 255;
-    }
-       
+
     FastLED.show();
-
-    if (leds[100].red < 8 )
-      for (int i = 100; i < 112; i++)
-        leds[i] = CRGB(0, 0, 0);
-
-    if (leds[100].red > 0)
-      for (int i = 100; i < 112; i++)
-        leds[i].red -= 8;
   }
 }

@@ -42,8 +42,7 @@ IRrecv irrecv(IR_PIN);
 decode_results results;
 
 // dynamic LED sequence globals
-CRGB dynamicHue = CRGB(255, 0, 0);
-byte dynamicHueCycle = 0;
+CHSV dynamicHue = CHSV(0, 255, 255);
 
 
 // -------------------- STARTUP -------------------- //
@@ -158,72 +157,6 @@ void Off()
 }
 
 
-// takes a strength value between 0 and 255 and shifts dynamicHue
-void DynamicHueModifier(int strength)
-{
-
-  // determine target and source for this cycle (R->G, G->B, B->R)
-  byte source;
-  byte target;
-  
-  // red cycle
-  if (dynamicHueCycle == 0)
-  {
-    source = 0;
-    target = 1;
-  }
-
-  // green cycle
-  if (dynamicHueCycle == 1)
-  {
-    source = 1;
-    target = 2;
-  }
-
-  // blue cycle
-  if (dynamicHueCycle == 2)
-  {
-    source = 2;
-    target = 0;
-  }
-
-  // target less than 255 means we're in the first half of the cycle
-  if (dynamicHue[target] < 255)
-  {
-    // increase target value until strength runs out
-    for (strength; strength > 0; strength--)
-    {
-      dynamicHue[target]++;
-
-      // if target value maxes, recursively call to re-enter the second case with remaining strength
-      if (dynamicHue[target] == 255)
-      {
-        DynamicHueModifier(strength);
-        return;
-      }  
-    }
-  }
-
-  // target is at 255, we're in the second half of the cycle
-  else
-  {
-    // reduce source value until strength runs out
-    for (strength; strength > 0; strength--)
-    {
-      dynamicHue[source]--;
-
-      // if source value is zero with strenght remaining, shift to the next cycle
-      // and recursively call with remaining strength
-      if (dynamicHue[source] == 0)
-      {
-        dynamicHueCycle++;        
-        if (dynamicHueCycle > 2) {dynamicHueCycle = 0;}   
-        DynamicHueModifier(strength);
-        return;
-      }
-    }
-  }
-}
 
 
 // -------------------- LED SEQUENCES -------------------- //
@@ -246,7 +179,7 @@ void BootSequence()
         leds[j].red += 1;
     }
 
-    // begin increasing red brightness of GPU LEDs after 40 cycles
+    // begin increasing red brightness of GPU LEDs after 10 loops
     if (i > 10)
     {
       for (int j = 100; j < 112; j++)
@@ -306,7 +239,7 @@ void RedDimmed()
 }
 
 
-// NOTE: LED_Visualizer.exe MUST be running for this mode
+// NOTE: Arduino should be plugged into a computer running AudioInputProcessor.exe for this mode.
 // a more dynamic visualizer utilizing the full color range
 void DynamicVisualizer()
 {
@@ -317,9 +250,9 @@ void DynamicVisualizer()
 
     // shift LEDs away from the center LED (37)
     for (int i = 0; i < 37; i++)
-      leds[i].setRGB(leds[i+1]);
+      leds[i] = leds[i+1];
     for (int i = 74; i > 37; i--)
-      leds[i].setRGB(leds[i-1]);
+      leds[i] = leds[i-1];
 
     // normalize audioIn to get closer to 255
     if (audioIn*2 > 255)
@@ -327,35 +260,63 @@ void DynamicVisualizer()
     else
       audioIn *= 2;
 
-    //update center LED
-    leds[37].red = audioIn;
 
+    // shift the dynamic hue by a factor of the audioIn strength
+    if (audioIn > 240)
+    {
+      for (int i = audioIn/15; i > 0; i--)
+      {
+        if (dynamicHue.hue == 255)
+          dynamicHue.hue = 0;
+        else
+          dynamicHue.hue++;
+      }
+    }
+
+    else
+    {
+      for (int i = audioIn/100; i > 0; i--)
+      {
+        if (dynamicHue.hue == 255)
+          dynamicHue.hue = 0;
+        else
+          dynamicHue.hue++;
+      }
+    }
+
+    // apply brightness adjustment
+    dynamicHue.val = audioIn;
+
+    // set center LED
+    leds[37] = dynamicHue;
+    
     if (leds[100].red + audioIn/5 <= 255)
     {
-      for (int i = 100; i < 112; i++)        
+      for (int i = 75; i < 112; i++)        
         leds[i].red += audioIn/5;
     }
     
     else
     {
-      for (int i = 100; i < 112; i++)        
+      for (int i = 75; i < 112; i++)        
         leds[i].red = 255;
     }
        
     FastLED.show();
 
     if (leds[100].red < 8 )
-      for (int i = 100; i < 112; i++)
+      for (int i = 75; i < 112; i++)
         leds[i] = CRGB(0, 0, 0);
 
     if (leds[100].red > 0)
-      for (int i = 100; i < 112; i++)
+      for (int i = 75; i < 112; i++)
         leds[i].red -= 8;
   }
 }
 
 
-// NOTE: LED_Visualizer.exe MUST be running for this mode
+// NOTE: Arduino should be plugged into a computer running AudioInputProcessor.exe for this mode.
+// a relaxed visualizer utilizing only red channels
 void MellowVisualizer()
 {
   if (Serial.available())

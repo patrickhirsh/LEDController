@@ -1,3 +1,6 @@
+// Written by Patrick Hirsh, August 2018
+// https://github.com/patrickhirsh/LEDController
+
 #include <bitswap.h>
 #include <chipsets.h>
 #include <color.h>
@@ -30,13 +33,20 @@
 #define LED_PIN             7
 #define IR_PIN              8
 #define NUM_LEDS            112
+#define BRIGHTNESS_0        5
+#define BRIGHTNESS_1        10
+#define BRIGHTNESS_2        50
+#define BRIGHTNESS_3        127
+#define BRIGHTNESS_4        255
+#define GPU_SCALE_FACTOR    5     // scale gpu LED brightness cutoff by this value (GPU LEDs should be brighter than back LEDs)
 
 // control globals
-CRGB leds[NUM_LEDS];        // 0-99: back LEDs (bottom right moving CC); 100-111: GPU LEDs (left to right)
-byte audioIn = 0;           // processed audio signal normalized to range 0-255
-byte ledMode = 0;           // determines which LED sequence to run (if ledStatus = 1) -> 10 = BootSequence
-byte ledStatus = 1;         // 1 = on; 0 = off
-byte ledBrightness = 255;   // global LED brightness, used in the brightness control functions
+CRGB leds[NUM_LEDS];              // 0-99: back LEDs (bottom right moving CC); 100-111: GPU LEDs (left to right)
+byte audioIn = 0;                 // processed audio signal normalized to range 0-255
+byte ledMode = 0;                 // determines which LED sequence to run (if ledStatus = 1)
+byte ledStatus = 1;               // 1 = on; 0 = off
+byte ledBrightness = 255;         // global LED brightness, used in the brightness control functions
+byte ledBrightnessPreset = 4;     // 5 presets (0-4). Because of IR occlusion with FastLED, presets make more sense (see IRHandler())
 
 // IR remote globals
 IRrecv irrecv(IR_PIN);
@@ -50,10 +60,12 @@ CHSV dynamicHue = CHSV(0, 255, 255);
 
 
 // -------------------- STARTUP -------------------- //
+
+
 void setup() 
 {
   // clear LEDs
-  Off();
+  off();
   
 	// tell FastLED about the LED strip configuration
 	FastLED.addLeds<WS2812B, LED_PIN, GRB>(leds, NUM_LEDS);
@@ -69,6 +81,8 @@ void setup()
 
 
 // -------------------- MAIN LOOP -------------------- //
+
+
 void loop()
 {
   // handle IR signals
@@ -77,15 +91,14 @@ void loop()
     IRHandler();
     irrecv.resume();
   }
-
+  
   // are LEDs active?
   if (ledStatus == 1)
   {
     // run mode specified by ledMode
-    if (ledMode == 0)      {Red();}
-    else if (ledMode == 1) {RedDimmed();}
-    else if (ledMode == 8) {MellowVisualizer();}
-    else if (ledMode == 9) {DynamicVisualizer();}
+    if (ledMode == 0)      {red();}
+    else if (ledMode == 8) {mellowVisualizer();}
+    else if (ledMode == 9) {dynamicVisualizer();}
        
     // non-implemented mode selected. Turn LEDs off
     else {ledStatus = 0;}       
@@ -99,37 +112,23 @@ void loop()
 
 
 // simple all-red preset
-void Red()
+void red()
 {
   // only update LEDs once
   if (leds[0].red != 255)
 	  for (int i = 0; i < NUM_LEDS; i++)
 		  leds[i] = CRGB(255, 0, 0);
-  
-	FastLED.show();
-}
 
-
-// simple all-red preset (dimmed)
-void RedDimmed()
-{
-  // only update LEDs once
-  if (leds[0].red != 80)
-  {
-    for (int i = 0; i < 100; i++)
-      leds[i] = CRGB(40, 0, 0);
-    for (int i = 100; i < 112; i++)
-      leds[i] = CRGB(255, 0, 0);
-  }
-  
+  setGlobalBrightness();
   FastLED.show();
 }
 
 
 // NOTE: Arduino should be plugged into a computer running AudioInputProcessor.exe for this mode.
 // a more dynamic visualizer utilizing the full color range
-void DynamicVisualizer()
+void dynamicVisualizer()
 {
+  // make sure we're getting input from AudioInputProcessor.exe
   if (Serial.available())
   {
     // audioIn is typically a value from 0-127 (but can be as high as 255)
@@ -163,16 +162,17 @@ void DynamicVisualizer()
       leds[i] += CRGB(audioIn/5, 0, 0);   // additive factor of audioIn
       leds[i] -= CRGB(8, 0, 0);           // reductive constant
     }
-    
-    FastLED.show();
   }
+  setGlobalBrightness();
+  FastLED.show();
 }
 
 
 // NOTE: Arduino should be plugged into a computer running AudioInputProcessor.exe for this mode.
 // a relaxed visualizer utilizing only red channels
-void MellowVisualizer()
+void mellowVisualizer()
 {
+  // make sure we're getting input from AudioInputProcessor.exe
   if (Serial.available())
   {
     // audioIn is typically a value from 0-127 (but can be as high as 255)
@@ -196,16 +196,17 @@ void MellowVisualizer()
     {
       leds[i] += CRGB(audioIn/5, 0, 0);   // additive factor of audioIn
       leds[i] -= CRGB(8, 0, 0);           // reductive constant
-    }
-
-    FastLED.show();
+    }   
   }
+  setGlobalBrightness();
+  FastLED.show();
 }
 
 
 
 
 // -------------------- HELPER FUNCTIONS -------------------- //
+
 
 /*
  * IRHandler is responsible for detecting IR remote signals and
@@ -234,13 +235,13 @@ void IRHandler()
     case 0xFFC23D: break;    // Skip Forward
     case 0xFF22DD: break;    // Skip Back
     case 0xFF02FD: break;    // Play/Pause
-    case 0xFF906F: break;    // Arrow Up
-    case 0xFFE01F: break;    // Arrow Down
     case 0xFF629D: break;    // Vol Up
     case 0xFFA857: break;    // Vol Down
+    case 0xFF906F: adjustGlobalBrightness(1); break;  // Arrow Up
+    case 0xFFE01F: adjustGlobalBrightness(0); break;  // Arrow Down
     
     case 0xFF6897: ledMode = 0; ledStatus = 1; break; // 0 - Red
-    case 0xFF30CF: ledMode = 1; ledStatus = 1; break; // 1 - RedDimmed
+    case 0xFF30CF: ledMode = 1; ledStatus = 1; break; // 1
     case 0xFF18E7: ledMode = 2; ledStatus = 1; break; // 2
     case 0xFF7A85: ledMode = 3; ledStatus = 1; break; // 3
     case 0xFF10EF: ledMode = 4; ledStatus = 1; break; // 4
@@ -251,7 +252,7 @@ void IRHandler()
     case 0xFF52AD: ledMode = 9; ledStatus = 1; break; // 9 - DynamicVisualizer
     
     default:
-      Off();
+      off();
       ledStatus = 0;   
   }
   // prevent repeated signals
@@ -259,8 +260,112 @@ void IRHandler()
 }
 
 
+/*
+ * Used to control the global LED brightness
+ * upOrDown = 1 -> Brightness Up; upOrDown = 0 -> Brightness Down
+ * 
+ * While I could use FastLED.setBrightness(), I don't want a scaled brightness
+ * with these brightness settings. I simply want a brightness cutoff. Scaling
+ * brightness evenly causes most of the visual effects within certain sequences
+ * (particularly the visualizers) to be lost.
+ */
+void adjustGlobalBrightness(int upOrDown)
+{
+  // set the brightness preset
+  if (upOrDown == 0)
+  {
+    if (ledBrightnessPreset > 0)
+      ledBrightnessPreset--;
+    else
+      ledBrightnessPreset = 0;
+  }
+  if (upOrDown == 1)
+  {
+    if (ledBrightnessPreset < 4)
+      ledBrightnessPreset++;
+    else
+      ledBrightnessPreset = 4;
+  }
+
+  // display selected brightness preset
+  if (ledBrightnessPreset == 0)
+  {
+    ledBrightness = BRIGHTNESS_0;
+    for (int i = 25; i < 30; i++)
+      leds[i] = CRGB(BRIGHTNESS_0, BRIGHTNESS_0, BRIGHTNESS_0);
+    FastLED.show();
+    delay(200);
+    off();
+  }
+  else if (ledBrightnessPreset == 1)
+  {
+    ledBrightness = BRIGHTNESS_1;
+    for (int i = 25; i < 35; i++)
+      leds[i] = CRGB(BRIGHTNESS_1, BRIGHTNESS_1, BRIGHTNESS_1);
+    FastLED.show();
+    delay(200);
+    off();
+  }
+  else if (ledBrightnessPreset == 2)
+  {
+    ledBrightness = BRIGHTNESS_2;
+    for (int i = 25; i < 40; i++)
+      leds[i] = CRGB(BRIGHTNESS_2, BRIGHTNESS_2, BRIGHTNESS_2);
+    FastLED.show();
+    delay(200);
+    off();
+  }
+  else if (ledBrightnessPreset == 3)
+  {
+    ledBrightness = BRIGHTNESS_3;
+    for (int i = 25; i < 45; i++)
+      leds[i] = CRGB(BRIGHTNESS_3, BRIGHTNESS_3, BRIGHTNESS_3);
+    FastLED.show();
+    delay(200);
+    off();
+  }
+  else if (ledBrightnessPreset == 4)
+  {
+    ledBrightness = BRIGHTNESS_4;
+    for (int i = 25; i < 50; i++)
+      leds[i] = CRGB(BRIGHTNESS_4, BRIGHTNESS_4, BRIGHTNESS_4);
+    FastLED.show();
+    delay(200);
+    off();
+  }
+
+  // note that we don't change the ledMode in this IR signal handler
+  // this causes the ledMode to default back to off after adjusting
+  // brightness. We also only briefly "display" the brightness setting -
+  // this is to prevent IR signal blocking by the FastLED library.
+  // Once the displayed brightness turns off, the handler is ready for
+  // another IR signal.
+}
+
+
+// should be ran before updating any LEDs with FastLED.show()
+void setGlobalBrightness()
+{
+  // adjust brightness for back LEDs
+  for (int i = 0; i < 100; i++)
+  {
+    if (leds[i].red > ledBrightness) {leds[i].red = ledBrightness;}
+    if (leds[i].green > ledBrightness) {leds[i].green = ledBrightness;}
+    if (leds[i].blue > ledBrightness) {leds[i].blue = ledBrightness;}
+  }
+
+  // GPU LEDs should be brighter than back LEDs
+  for (int i = 100; i < NUM_LEDS; i++)
+  {
+    if (leds[i].red > ledBrightness*GPU_SCALE_FACTOR) {leds[i].red = ledBrightness*GPU_SCALE_FACTOR;}
+    if (leds[i].green > ledBrightness*GPU_SCALE_FACTOR) {leds[i].green = ledBrightness*GPU_SCALE_FACTOR;}
+    if (leds[i].blue > ledBrightness*GPU_SCALE_FACTOR) {leds[i].blue = ledBrightness*GPU_SCALE_FACTOR;}
+  }
+}
+
+
 // turn all LEDs off
-void Off()
+void off()
 {
   FastLED.clear();
   FastLED.show();

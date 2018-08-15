@@ -17,9 +17,10 @@ import java.io.IOException;
 
 public class AudioInputProcessor extends PApplet {
 
-/*
-*   Written by Patrick Hirsh, August 2018
-*    
+// Written by Patrick Hirsh, August 2018
+// https://github.com/patrickhirsh/LEDController
+
+/* 
 *   LED Visualizer Audio Input Processor
 *    
 *   This script takes audio signal from the default windows recording device

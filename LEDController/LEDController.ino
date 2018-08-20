@@ -34,8 +34,8 @@
 #define IR_PIN              8
 #define NUM_LEDS            112
 #define BRIGHTNESS_0        5
-#define BRIGHTNESS_1        10
-#define BRIGHTNESS_2        50
+#define BRIGHTNESS_1        20
+#define BRIGHTNESS_2        65
 #define BRIGHTNESS_3        127
 #define BRIGHTNESS_4        255
 #define GPU_SCALE_FACTOR    5     // scale gpu LED brightness cutoff by this value (GPU LEDs should be brighter than back LEDs)
@@ -75,6 +75,9 @@ void setup()
 
   // start the IR reciever
   irrecv.enableIRIn();
+
+  // used in various visualizers for random selection
+  randomSeed(analogRead(0));
 }
 
 
@@ -97,6 +100,7 @@ void loop()
   {
     // run mode specified by ledMode
     if (ledMode == 0)      {red();}
+    else if (ledMode == 7) {protoVisualizer();}
     else if (ledMode == 8) {mellowVisualizer();}
     else if (ledMode == 9) {dynamicVisualizer();}
        
@@ -135,7 +139,10 @@ void dynamicVisualizer()
     audioIn = Serial.read();
 
     // shift LEDs away from the center LED (37)
-    outwardShift(37, 74, 0);
+    for (int i = 0; i < 37; i++)
+      leds[i] = leds[i+1];
+    for (int i = 74; i > 37; i--)
+      leds[i] = leds[i-1];
 
     // scale audioIn for better visuals
     if (audioIn*2 > 255)
@@ -144,10 +151,10 @@ void dynamicVisualizer()
       audioIn *= 2;
 
     // shifting hue by a factor of audioIn causes colors to shift faster with higher audioIn values
-    if (audioIn > 240)
+    if (audioIn > 200)
       dynamicHueShift(audioIn/15);
     else
-      dynamicHueShift(audioIn/100);
+      dynamicHueShift(audioIn/70);
 
     // brightness is directly related to audioIn strength
     dynamicHue.val = audioIn;
@@ -179,7 +186,10 @@ void mellowVisualizer()
     audioIn = Serial.read();
 
     // shift LEDs away from the center LED (37)
-    outwardShift(37, 74, 0);
+    for (int i = 0; i < 37; i++)
+      leds[i] = leds[i+1];
+    for (int i = 74; i > 37; i--)
+      leds[i] = leds[i-1];
 
     // scale audioIn for better visuals
     if (audioIn*2 > 255)
@@ -197,6 +207,59 @@ void mellowVisualizer()
       leds[i] += CRGB(audioIn/5, 0, 0);   // additive factor of audioIn
       leds[i] -= CRGB(8, 0, 0);           // reductive constant
     }   
+  }
+  setGlobalBrightness();
+  FastLED.show();
+}
+
+
+// NOTE: Arduino should be plugged into a computer running AudioInputProcessor.exe for this mode.
+void protoVisualizer()
+{
+  // make sure we're getting input from AudioInputProcessor.exe
+  if (Serial.available())
+  {
+    // audioIn is typically a value from 0-127 (but can be as high as 255)
+    audioIn = Serial.read();
+
+    // scale audioIn for better visuals
+    if (audioIn*2 > 255)
+      audioIn = 255;
+    else
+      audioIn *= 2;
+
+    // shifting hue by a factor of audioIn causes colors to shift faster with higher audioIn values
+    dynamicHueShift(audioIn/70);
+
+    int brightness = audioIn;
+    int origin = random(112);
+    int spread = audioIn/5;
+    int upper = origin;
+    int lower = origin;
+
+    leds[origin] += CHSV(dynamicHue.hue, 255, brightness);
+
+    for (int i = 0; i < spread; i++)
+    {
+      upper++;
+      if (upper > 111) {upper = 0;}
+      leds[upper] += CHSV(dynamicHue.hue, 255, brightness);
+      brightness /= 1.2;
+    }
+
+    brightness = audioIn;
+    
+    for (int i = 0; i < spread; i++)
+    {
+      if (lower == 0) {lower = 112;}
+      lower--;
+      leds[lower] += CHSV(dynamicHue.hue, 255, brightness);
+      brightness /= 1.2;
+    }
+
+    for (int i = 0; i < NUM_LEDS; i++)
+      leds[i] -= CHSV(0, 0, 2);
+    
   }
   setGlobalBrightness();
   FastLED.show();
@@ -291,7 +354,7 @@ void adjustGlobalBrightness(int upOrDown)
   if (ledBrightnessPreset == 0)
   {
     ledBrightness = BRIGHTNESS_0;
-    for (int i = 25; i < 30; i++)
+    for (int i = 100; i < NUM_LEDS; i++)
       leds[i] = CRGB(BRIGHTNESS_0, BRIGHTNESS_0, BRIGHTNESS_0);
     FastLED.show();
     delay(200);
@@ -300,7 +363,7 @@ void adjustGlobalBrightness(int upOrDown)
   else if (ledBrightnessPreset == 1)
   {
     ledBrightness = BRIGHTNESS_1;
-    for (int i = 25; i < 35; i++)
+    for (int i = 75; i < NUM_LEDS; i++)
       leds[i] = CRGB(BRIGHTNESS_1, BRIGHTNESS_1, BRIGHTNESS_1);
     FastLED.show();
     delay(200);
@@ -309,7 +372,7 @@ void adjustGlobalBrightness(int upOrDown)
   else if (ledBrightnessPreset == 2)
   {
     ledBrightness = BRIGHTNESS_2;
-    for (int i = 25; i < 40; i++)
+    for (int i = 50; i < NUM_LEDS; i++)
       leds[i] = CRGB(BRIGHTNESS_2, BRIGHTNESS_2, BRIGHTNESS_2);
     FastLED.show();
     delay(200);
@@ -318,7 +381,9 @@ void adjustGlobalBrightness(int upOrDown)
   else if (ledBrightnessPreset == 3)
   {
     ledBrightness = BRIGHTNESS_3;
-    for (int i = 25; i < 45; i++)
+    for (int i = 50; i < NUM_LEDS; i++)
+      leds[i] = CRGB(BRIGHTNESS_3, BRIGHTNESS_3, BRIGHTNESS_3);
+    for (int i = 0; i < 25; i++)
       leds[i] = CRGB(BRIGHTNESS_3, BRIGHTNESS_3, BRIGHTNESS_3);
     FastLED.show();
     delay(200);
@@ -327,7 +392,7 @@ void adjustGlobalBrightness(int upOrDown)
   else if (ledBrightnessPreset == 4)
   {
     ledBrightness = BRIGHTNESS_4;
-    for (int i = 25; i < 50; i++)
+    for (int i = 0; i < NUM_LEDS; i++)
       leds[i] = CRGB(BRIGHTNESS_4, BRIGHTNESS_4, BRIGHTNESS_4);
     FastLED.show();
     delay(200);
@@ -382,15 +447,4 @@ void dynamicHueShift(int strength)
     else
       dynamicHue.hue++;
   }
-}
-
-
-// shifts LEDs outward by one from the center LED towards the specified bounds
-// paramters should be the index of the specified leds within leds[]
-void outwardShift(int centerLED, int upperBound, int lowerBound)
-{
-  for (int i = lowerBound; i < centerLED; i++)
-    leds[i] = leds[i+1];
-  for (int i = upperBound; i > centerLED; i--)
-    leds[i] = leds[i-1];
 }

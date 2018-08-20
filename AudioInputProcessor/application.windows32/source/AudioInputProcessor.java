@@ -24,10 +24,10 @@ public class AudioInputProcessor extends PApplet {
 *   LED Visualizer Audio Input Processor
 *    
 *   This script takes audio signal from the default windows recording device
-*   (ideally Stereo Mix), normalizes it, and converts it into a byte value. This
-*   value is then written to the specified port for use in an LED Visualizer. 
-*   For best results, tweak the powVal and scaleVal globals such that sendVal 
-*   values *just* reach 255 at the loudest point of your audio.
+*   (ideally Stereo Mix), normalizes it, and converts it into data suitable for
+*   serial port communication. This data is then written to the specified port for 
+*   use in an LED Visualizer. For best results, tweak the powVal and scaleVal 
+*   globals such that sendVal values *just* reach 255 at the loudest point of your audio.
 *
 *   Thanks to Abhik Pal for the Arduino serial port communication template
 */

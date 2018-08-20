@@ -100,7 +100,6 @@ void loop()
   {
     // run mode specified by ledMode
     if (ledMode == 0)      {red();}
-    else if (ledMode == 7) {protoVisualizer();}
     else if (ledMode == 8) {mellowVisualizer();}
     else if (ledMode == 9) {dynamicVisualizer();}
        
@@ -207,59 +206,6 @@ void mellowVisualizer()
       leds[i] += CRGB(audioIn/5, 0, 0);   // additive factor of audioIn
       leds[i] -= CRGB(8, 0, 0);           // reductive constant
     }   
-  }
-  setGlobalBrightness();
-  FastLED.show();
-}
-
-
-// NOTE: Arduino should be plugged into a computer running AudioInputProcessor.exe for this mode.
-void protoVisualizer()
-{
-  // make sure we're getting input from AudioInputProcessor.exe
-  if (Serial.available())
-  {
-    // audioIn is typically a value from 0-127 (but can be as high as 255)
-    audioIn = Serial.read();
-
-    // scale audioIn for better visuals
-    if (audioIn*2 > 255)
-      audioIn = 255;
-    else
-      audioIn *= 2;
-
-    // shifting hue by a factor of audioIn causes colors to shift faster with higher audioIn values
-    dynamicHueShift(audioIn/70);
-
-    int brightness = audioIn;
-    int origin = random(112);
-    int spread = audioIn/5;
-    int upper = origin;
-    int lower = origin;
-
-    leds[origin] += CHSV(dynamicHue.hue, 255, brightness);
-
-    for (int i = 0; i < spread; i++)
-    {
-      upper++;
-      if (upper > 111) {upper = 0;}
-      leds[upper] += CHSV(dynamicHue.hue, 255, brightness);
-      brightness /= 1.2;
-    }
-
-    brightness = audioIn;
-    
-    for (int i = 0; i < spread; i++)
-    {
-      if (lower == 0) {lower = 112;}
-      lower--;
-      leds[lower] += CHSV(dynamicHue.hue, 255, brightness);
-      brightness /= 1.2;
-    }
-
-    for (int i = 0; i < NUM_LEDS; i++)
-      leds[i] -= CHSV(0, 0, 2);
-    
   }
   setGlobalBrightness();
   FastLED.show();
@@ -448,3 +394,63 @@ void dynamicHueShift(int strength)
       dynamicHue.hue++;
   }
 }
+
+
+
+
+// -------------------- PROTOTYPE CODE -------------------- //
+
+
+/*
+// NOTE: Arduino should be plugged into a computer running AudioInputProcessor.exe for this mode.
+void protoVisualizer()
+{
+  // make sure we're getting input from AudioInputProcessor.exe
+  if (Serial.available())
+  {
+    // audioIn is typically a value from 0-127 (but can be as high as 255)
+    audioIn = Serial.read();
+
+    // scale audioIn for better visuals
+    if (audioIn*2 > 255)
+      audioIn = 255;
+    else
+      audioIn *= 2;
+
+    // shifting hue by a factor of audioIn causes colors to shift faster with higher audioIn values
+    dynamicHueShift(audioIn/70);
+
+    int brightness = audioIn;
+    int origin = random(112);
+    int spread = audioIn/5;
+    int upper = origin;
+    int lower = origin;
+
+    leds[origin] += CHSV(dynamicHue.hue, 255, brightness);
+
+    for (int i = 0; i < spread; i++)
+    {
+      upper++;
+      if (upper > 111) {upper = 0;}
+      leds[upper] += CHSV(dynamicHue.hue, 255, brightness);
+      brightness /= 1.2;
+    }
+
+    brightness = audioIn;
+    
+    for (int i = 0; i < spread; i++)
+    {
+      if (lower == 0) {lower = 112;}
+      lower--;
+      leds[lower] += CHSV(dynamicHue.hue, 255, brightness);
+      brightness /= 1.2;
+    }
+
+    for (int i = 0; i < NUM_LEDS; i++)
+      leds[i] -= CHSV(0, 0, 2);
+    
+  }
+  setGlobalBrightness();
+  FastLED.show();
+}
+*/

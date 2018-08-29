@@ -30,9 +30,11 @@
 #include <power_mgt.h>
 #include "IRremote.h"
 
-#define LED_PIN             7
+#define LED_PIN_CASE        7
+#define LED_PIN_DESK        6
+#define NUM_LEDS_CASE       112
+#define NUM_LEDS_DESK       91
 #define IR_PIN              8
-#define NUM_LEDS            112
 #define BRIGHTNESS_0        5
 #define BRIGHTNESS_1        20
 #define BRIGHTNESS_2        65
@@ -41,7 +43,8 @@
 #define GPU_SCALE_FACTOR    5     // scale gpu LED brightness cutoff by this value (GPU LEDs should be brighter than back LEDs)
 
 // control globals
-CRGB leds[NUM_LEDS];              // 0-99: back LEDs (bottom right moving CC); 100-111: GPU LEDs (left to right)
+CRGB ledsC[NUM_LEDS_CASE];        // 0-99: back LEDs (bottom right moving CC); 100-111: GPU LEDs (left to right)
+CRGB ledsD[NUM_LEDS_DESK];        // 0-91: Moving from left to right on the back of the desk
 byte audioIn = 0;                 // processed audio signal normalized to range 0-255
 byte ledMode = 0;                 // determines which LED sequence to run (if ledStatus = 1)
 byte ledStatus = 1;               // 1 = on; 0 = off
@@ -68,7 +71,8 @@ void setup()
   off();
   
 	// tell FastLED about the LED strip configuration
-	FastLED.addLeds<WS2812B, LED_PIN, GRB>(leds, NUM_LEDS);
+	FastLED.addLeds<WS2812B, LED_PIN_CASE, GRB>(ledsC, NUM_LEDS_CASE);
+  FastLED.addLeds<WS2812B, LED_PIN_DESK, GRB>(ledsD, NUM_LEDS_DESK);
 
   // initialize the serial communication:
   Serial.begin(9600);
@@ -118,9 +122,12 @@ void loop()
 void red()
 {
   // only update LEDs once
-  if (leds[0].red != 255)
-	  for (int i = 0; i < NUM_LEDS; i++)
-		  leds[i] = CRGB(255, 0, 0);
+  if (ledsC[0].red != 255)
+	  for (int i = 0; i < NUM_LEDS_CASE; i++)
+		  ledsC[i] = CRGB(255, 0, 0);
+  if (ledsD[0].red != 255)
+    for (int i = 0; i < NUM_LEDS_DESK; i++)
+      ledsD[i] = CRGB(255, 0, 0);
 
   setGlobalBrightness();
   FastLED.show();
@@ -139,9 +146,9 @@ void dynamicVisualizer()
 
     // shift LEDs away from the center LED (37)
     for (int i = 0; i < 37; i++)
-      leds[i] = leds[i+1];
+      ledsC[i] = ledsC[i+1];
     for (int i = 74; i > 37; i--)
-      leds[i] = leds[i-1];
+      ledsC[i] = ledsC[i-1];
 
     // scale audioIn for better visuals
     if (audioIn*2 > 255)
@@ -159,14 +166,14 @@ void dynamicVisualizer()
     dynamicHue.val = audioIn;
 
     // set center LED
-    leds[37] = dynamicHue;
+    ledsC[37] = dynamicHue;
 
     // sudo "bass reactive" GPU LEDs through additive lighting
     // additive lighting usually reacts more to drawn-out noise (bass frequencies)
     for (int i = 75; i < 112; i++)
     {
-      leds[i] += CRGB(audioIn/5, 0, 0);   // additive factor of audioIn
-      leds[i] -= CRGB(8, 0, 0);           // reductive constant
+      ledsC[i] += CRGB(audioIn/5, 0, 0);   // additive factor of audioIn
+      ledsC[i] -= CRGB(8, 0, 0);           // reductive constant
     }
   }
   setGlobalBrightness();
@@ -186,9 +193,9 @@ void mellowVisualizer()
 
     // shift LEDs away from the center LED (37)
     for (int i = 0; i < 37; i++)
-      leds[i] = leds[i+1];
+      ledsC[i] = ledsC[i+1];
     for (int i = 74; i > 37; i--)
-      leds[i] = leds[i-1];
+      ledsC[i] = ledsC[i-1];
 
     // scale audioIn for better visuals
     if (audioIn*2 > 255)
@@ -197,14 +204,14 @@ void mellowVisualizer()
       audioIn *= 2;
 
     // set center LED
-    leds[37].red = audioIn;
+    ledsC[37].red = audioIn;
 
     // sudo "bass reactive" GPU LEDs through additive lighting
     // additive lighting usually reacts more to drawn-out noise (bass frequencies)
     for (int i = 75; i < 112; i++)
     {
-      leds[i] += CRGB(audioIn/5, 0, 0);   // additive factor of audioIn
-      leds[i] -= CRGB(8, 0, 0);           // reductive constant
+      ledsC[i] += CRGB(audioIn/5, 0, 0);   // additive factor of audioIn
+      ledsC[i] -= CRGB(8, 0, 0);           // reductive constant
     }   
   }
   setGlobalBrightness();
@@ -300,8 +307,8 @@ void adjustGlobalBrightness(int upOrDown)
   if (ledBrightnessPreset == 0)
   {
     ledBrightness = BRIGHTNESS_0;
-    for (int i = 100; i < NUM_LEDS; i++)
-      leds[i] = CRGB(BRIGHTNESS_0, BRIGHTNESS_0, BRIGHTNESS_0);
+    for (int i = 100; i < NUM_LEDS_CASE; i++)
+      ledsC[i] = CRGB(BRIGHTNESS_0, BRIGHTNESS_0, BRIGHTNESS_0);
     FastLED.show();
     delay(200);
     off();
@@ -309,8 +316,8 @@ void adjustGlobalBrightness(int upOrDown)
   else if (ledBrightnessPreset == 1)
   {
     ledBrightness = BRIGHTNESS_1;
-    for (int i = 75; i < NUM_LEDS; i++)
-      leds[i] = CRGB(BRIGHTNESS_1, BRIGHTNESS_1, BRIGHTNESS_1);
+    for (int i = 75; i < NUM_LEDS_CASE; i++)
+      ledsC[i] = CRGB(BRIGHTNESS_1, BRIGHTNESS_1, BRIGHTNESS_1);
     FastLED.show();
     delay(200);
     off();
@@ -318,8 +325,8 @@ void adjustGlobalBrightness(int upOrDown)
   else if (ledBrightnessPreset == 2)
   {
     ledBrightness = BRIGHTNESS_2;
-    for (int i = 50; i < NUM_LEDS; i++)
-      leds[i] = CRGB(BRIGHTNESS_2, BRIGHTNESS_2, BRIGHTNESS_2);
+    for (int i = 50; i < NUM_LEDS_CASE; i++)
+      ledsC[i] = CRGB(BRIGHTNESS_2, BRIGHTNESS_2, BRIGHTNESS_2);
     FastLED.show();
     delay(200);
     off();
@@ -327,10 +334,10 @@ void adjustGlobalBrightness(int upOrDown)
   else if (ledBrightnessPreset == 3)
   {
     ledBrightness = BRIGHTNESS_3;
-    for (int i = 50; i < NUM_LEDS; i++)
-      leds[i] = CRGB(BRIGHTNESS_3, BRIGHTNESS_3, BRIGHTNESS_3);
+    for (int i = 50; i < NUM_LEDS_CASE; i++)
+      ledsC[i] = CRGB(BRIGHTNESS_3, BRIGHTNESS_3, BRIGHTNESS_3);
     for (int i = 0; i < 25; i++)
-      leds[i] = CRGB(BRIGHTNESS_3, BRIGHTNESS_3, BRIGHTNESS_3);
+      ledsC[i] = CRGB(BRIGHTNESS_3, BRIGHTNESS_3, BRIGHTNESS_3);
     FastLED.show();
     delay(200);
     off();
@@ -338,8 +345,8 @@ void adjustGlobalBrightness(int upOrDown)
   else if (ledBrightnessPreset == 4)
   {
     ledBrightness = BRIGHTNESS_4;
-    for (int i = 0; i < NUM_LEDS; i++)
-      leds[i] = CRGB(BRIGHTNESS_4, BRIGHTNESS_4, BRIGHTNESS_4);
+    for (int i = 0; i < NUM_LEDS_CASE; i++)
+      ledsC[i] = CRGB(BRIGHTNESS_4, BRIGHTNESS_4, BRIGHTNESS_4);
     FastLED.show();
     delay(200);
     off();
@@ -360,17 +367,17 @@ void setGlobalBrightness()
   // adjust brightness for back LEDs
   for (int i = 0; i < 100; i++)
   {
-    if (leds[i].red > ledBrightness) {leds[i].red = ledBrightness;}
-    if (leds[i].green > ledBrightness) {leds[i].green = ledBrightness;}
-    if (leds[i].blue > ledBrightness) {leds[i].blue = ledBrightness;}
+    if (ledsC[i].red > ledBrightness) {ledsC[i].red = ledBrightness;}
+    if (ledsC[i].green > ledBrightness) {ledsC[i].green = ledBrightness;}
+    if (ledsC[i].blue > ledBrightness) {ledsC[i].blue = ledBrightness;}
   }
 
   // GPU LEDs should be brighter than back LEDs
-  for (int i = 100; i < NUM_LEDS; i++)
+  for (int i = 100; i < NUM_LEDS_CASE; i++)
   {
-    if (leds[i].red > ledBrightness*GPU_SCALE_FACTOR) {leds[i].red = ledBrightness*GPU_SCALE_FACTOR;}
-    if (leds[i].green > ledBrightness*GPU_SCALE_FACTOR) {leds[i].green = ledBrightness*GPU_SCALE_FACTOR;}
-    if (leds[i].blue > ledBrightness*GPU_SCALE_FACTOR) {leds[i].blue = ledBrightness*GPU_SCALE_FACTOR;}
+    if (ledsC[i].red > ledBrightness*GPU_SCALE_FACTOR) {ledsC[i].red = ledBrightness*GPU_SCALE_FACTOR;}
+    if (ledsC[i].green > ledBrightness*GPU_SCALE_FACTOR) {ledsC[i].green = ledBrightness*GPU_SCALE_FACTOR;}
+    if (ledsC[i].blue > ledBrightness*GPU_SCALE_FACTOR) {ledsC[i].blue = ledBrightness*GPU_SCALE_FACTOR;}
   }
 }
 
@@ -426,13 +433,13 @@ void protoVisualizer()
     int upper = origin;
     int lower = origin;
 
-    leds[origin] += CHSV(dynamicHue.hue, 255, brightness);
+    ledsC[origin] += CHSV(dynamicHue.hue, 255, brightness);
 
     for (int i = 0; i < spread; i++)
     {
       upper++;
       if (upper > 111) {upper = 0;}
-      leds[upper] += CHSV(dynamicHue.hue, 255, brightness);
+      ledsC[upper] += CHSV(dynamicHue.hue, 255, brightness);
       brightness /= 1.2;
     }
 
@@ -442,12 +449,12 @@ void protoVisualizer()
     {
       if (lower == 0) {lower = 112;}
       lower--;
-      leds[lower] += CHSV(dynamicHue.hue, 255, brightness);
+      ledsC[lower] += CHSV(dynamicHue.hue, 255, brightness);
       brightness /= 1.2;
     }
 
-    for (int i = 0; i < NUM_LEDS; i++)
-      leds[i] -= CHSV(0, 0, 2);
+    for (int i = 0; i < NUM_LEDS_CASE; i++)
+      ledsC[i] -= CHSV(0, 0, 2);
     
   }
   setGlobalBrightness();

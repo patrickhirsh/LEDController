@@ -78,7 +78,8 @@ decode_results results;
 // stores the current global hue/sat/val for rainbow effects - See dynamicHueShift();
 // modes that use this global typically call dynamicHueShift() to shift hue/sat/val every loop before applying to LEDs
 CHSV dynamicHue = CHSV(0, 255, 255);   
-float vizSpread = 0;
+byte scrollingHue = 0;
+float visSpread = 0;
 
 
 // audio globals (updated with sampleAudio())
@@ -133,8 +134,8 @@ void loop()
   {
     // run mode specified by ledMode
     if (ledMode == 0)      {red();}
-    else if (ledMode == 8) {rainbowVisualizer();}
-    else if (ledMode == 9) {dynamicVisualizer();}
+    else if (ledMode == 8) {caseVisualizer();}
+    else if (ledMode == 9) {deskVisualizer();}
        
     // non-implemented mode selected. Turn LEDs off
     else {ledStatus = 0;}       
@@ -165,15 +166,68 @@ void red()
 
 // NOTE: Arduino should be plugged into a computer running AudioInputProcessor.exe for this mode.
 // a rainbow waterfall visualizer
-void dynamicVisualizer()
+void deskVisualizer()
 {
   // make sure we're getting input from AudioInputProcessor.exe
   if (Serial.available())
   {    
     // update audioSample and audioSamples buffer
     sampleAudio(Serial.read());
+
+    // set case LEDs to static red
+    if (ledsC[0].red != 255)
+      for (int i = 0; i < NUM_LEDS_CASE; i++)
+        ledsC[i] = CRGB(255, 0, 0);
+
+    // reduce the visualizer spread by a constant every loop
+    if (visSpread < 5) {visSpread -= .2;}     
+    else if (visSpread < 10) {visSpread -= .4;}
+    else if (visSpread < 20) {visSpread -= .6;}
+    else {visSpread -= 1;}
+
+    // ensure we never get a visSpread value below zero
+    if (visSpread < 0) 
+      visSpread = 0;      
+
+    // increase the spread if the audio signal is greater than the current spread
+    if (audioSample/5.7 > visSpread)
+      visSpread = audioSample/5.7;
+
+    // reset LEDs
+    for (int i = 0; i < NUM_LEDS_DESK; i++)
+      ledsD[i] = CRGB(0, 0, 0);
+
+    // update spread
+    for (int i = 0; i < (int)visSpread; i++)
+    {
+      ledsD[45 + i] = CHSV(scrollingHue + i*2, 255, 255);
+      ledsD[45 - i] = CHSV(scrollingHue + i*2, 255, 255);
+    }
+
+    // scrolling hue should increase by a constant every loop
+    scrollingHue += 1;
+
+    // create a "feathering" effect on the last LED in the spread (using the decimal of visSpread)
+    float edgeScale = visSpread - (int)visSpread;
+    ledsD[45 + (int)visSpread] = CHSV(scrollingHue + (int)visSpread*2, 255, 255*edgeScale);
+    ledsD[45 - (int)visSpread] = CHSV(scrollingHue + (int)visSpread*2, 255, 255*edgeScale);    
+  }
+  setGlobalBrightness();
+  FastLED.show();
+}
+
+
+// NOTE: Arduino should be plugged into a computer running AudioInputProcessor.exe for this mode.
+// 
+void caseVisualizer()
+{
+  // make sure we're getting input from AudioInputProcessor.exe
+  if (Serial.available())
+  { 
+    // update audioSample and audioSamples buffer
+    sampleAudio(Serial.read());
     
-    // shift LEDs away from the center Case LED (37)
+    // shift LEDs away from the center Case LED (37)   
     for (int i = 0; i < 37; i++)
       ledsC[i] = ledsC[i+1];
     for (int i = 74; i > 37; i--)
@@ -186,7 +240,8 @@ void dynamicVisualizer()
     // brightness is directly related to audioSample strength
     dynamicHue.val = audioSample;
 
-    ledsC[37] = dynamicHue;   // set center LED
+    // set center LED
+    ledsC[37] = dynamicHue;   
 
     // sudo "bass reactive" GPU LEDs through additive lighting
     // additive lighting usually reacts more to drawn-out noise (bass frequencies)
@@ -194,94 +249,15 @@ void dynamicVisualizer()
     {
       ledsC[i] += CRGB(audioSample/5, 0, 0);   // additive factor of audioSample
       ledsC[i] -= CRGB(8, 0, 0);               // reductive constant
-    }   
-
-    if (vizSpread < 5) {vizSpread -= .2;}     
-    else if (vizSpread < 10) {vizSpread -= .4;}
-    else if (vizSpread < 20) {vizSpread -= .6;}
-    else {vizSpread -= 1;}
-    
-    if (vizSpread < 0) 
-      vizSpread = 0;      
-
-    if (audioSample/5.7 > vizSpread)
-      vizSpread = audioSample/5.7;
-
-    for (int i = 0; i < NUM_LEDS_DESK; i++)
-      ledsD[i] = CRGB(0, 0, 0);
-    for (int i = 45; i < 45 + (int)vizSpread; i++)
-      ledsD[i] = CRGB(255, 0, 0);
-    for (int i = 45; i > 45 - (int)vizSpread; i--)
-      ledsD[i] = CRGB(255, 0, 0);
-
-    float edgeScale = vizSpread - (int)vizSpread;
-    ledsD[45 + (int)vizSpread] = CRGB(255*edgeScale, 0, 0);
-    ledsD[45 - (int)vizSpread] = CRGB(255*edgeScale, 0, 0);
-    
-  }
-  setGlobalBrightness();
-  FastLED.show();
-}
-
-
-// NOTE: Arduino should be plugged into a computer running AudioInputProcessor.exe for this mode.
-// 
-void rainbowVisualizer()
-{
-  // make sure we're getting input from AudioInputProcessor.exe
-  if (Serial.available())
-  {   
-    // update audioSample and audioSamples buffer
-    sampleAudio(Serial.read());
-    
-    // shifting hue by a factor of audioSample causes colors to shift faster with higher audioSample values
-    if (audioSample > 200) {dynamicHueShift(audioSample/15);}     
-    else {dynamicHueShift(audioSample/70);}      
-
-    int brightness = audioSample;
-    int origin = random(112);
-    int spread = audioSample/5;
-    int upper = origin;
-    int lower = origin;
-
-    ledsC[origin] += CHSV(dynamicHue.hue, 255, brightness);
-
-    for (int i = 0; i < spread; i++)
-    {
-      upper++;
-      if (upper > 111) {upper = 0;}
-      ledsC[upper] += CHSV(dynamicHue.hue, 255, brightness);
-      brightness /= 1.2;
     }
-
-    brightness = audioSample;
-    
-    for (int i = 0; i < spread; i++)
-    {
-      if (lower == 0) {lower = 112;}
-      lower--;
-      ledsC[lower] += CHSV(dynamicHue.hue, 255, brightness);
-      brightness /= 1.2;
-    }
-
-    for (int i = 0; i < NUM_LEDS_CASE; i++)
-      ledsC[i] -= CHSV(0, 0, 2);
-
-    // shift LEDs away from the center LED (45)
-    for (int i = 0; i < 45; i++)
-      ledsD[i] = ledsD[i+1];
-    for (int i = NUM_LEDS_DESK - 1; i > 45; i--)
-      ledsD[i] = ledsD[i-1];
-
-    // brightness is directly related to audioSample strength
-    dynamicHue.val = audioSample;
-
-    // set center LED
-    ledsD[45] = dynamicHue;
   }
-  setGlobalBrightness();
-  FastLED.show();
+
+  // set desk LEDs to static red
+  for (int i = 0; i < NUM_LEDS_DESK; i++)
+    ledsD[i] = CRGB(255, 0, 0);
   
+  setGlobalBrightness();
+  FastLED.show();
 }
 
 
@@ -322,7 +298,7 @@ void IRHandler()
     case 0xFF906F: adjustGlobalBrightness(1); break;  // Arrow Up
     case 0xFFE01F: adjustGlobalBrightness(0); break;  // Arrow Down
     
-    case 0xFF6897: ledMode = 0; ledStatus = 1; break; // 0 - Red
+    case 0xFF6897: ledMode = 0; ledStatus = 1; break; // 0 - red
     case 0xFF30CF: ledMode = 1; ledStatus = 1; break; // 1
     case 0xFF18E7: ledMode = 2; ledStatus = 1; break; // 2
     case 0xFF7A85: ledMode = 3; ledStatus = 1; break; // 3
@@ -330,8 +306,8 @@ void IRHandler()
     case 0xFF38C7: ledMode = 5; ledStatus = 1; break; // 5
     case 0xFF5AA5: ledMode = 6; ledStatus = 1; break; // 6
     case 0xFF42BD: ledMode = 7; ledStatus = 1; break; // 7
-    case 0xFF4AB5: ledMode = 8; ledStatus = 1; break; // 8 - MellowVisualizer
-    case 0xFF52AD: ledMode = 9; ledStatus = 1; break; // 9 - DynamicVisualizer
+    case 0xFF4AB5: ledMode = 8; ledStatus = 1; break; // 8 - caseVisualizer
+    case 0xFF52AD: ledMode = 9; ledStatus = 1; break; // 9 - deskVisualizer
     
     default:
       off();
@@ -373,8 +349,7 @@ void adjustGlobalBrightness(int upOrDown)
   if (ledBrightnessPreset == 0)
   {
     ledBrightness = BRIGHTNESS_0;
-    for (int i = 100; i < NUM_LEDS_CASE; i++)
-      ledsC[i] = CRGB(BRIGHTNESS_0, BRIGHTNESS_0, BRIGHTNESS_0);
+    ledsD[90] = CRGB(BRIGHTNESS_0, BRIGHTNESS_0, BRIGHTNESS_0);
     FastLED.show();
     delay(200);
     off();
@@ -382,8 +357,8 @@ void adjustGlobalBrightness(int upOrDown)
   else if (ledBrightnessPreset == 1)
   {
     ledBrightness = BRIGHTNESS_1;
-    for (int i = 75; i < NUM_LEDS_CASE; i++)
-      ledsC[i] = CRGB(BRIGHTNESS_1, BRIGHTNESS_1, BRIGHTNESS_1);
+    ledsD[90] = CRGB(BRIGHTNESS_1, BRIGHTNESS_1, BRIGHTNESS_1);
+    ledsD[85] = CRGB(BRIGHTNESS_1, BRIGHTNESS_1, BRIGHTNESS_1);
     FastLED.show();
     delay(200);
     off();
@@ -391,8 +366,9 @@ void adjustGlobalBrightness(int upOrDown)
   else if (ledBrightnessPreset == 2)
   {
     ledBrightness = BRIGHTNESS_2;
-    for (int i = 50; i < NUM_LEDS_CASE; i++)
-      ledsC[i] = CRGB(BRIGHTNESS_2, BRIGHTNESS_2, BRIGHTNESS_2);
+    ledsD[90] = CRGB(BRIGHTNESS_2, BRIGHTNESS_2, BRIGHTNESS_2);
+    ledsD[85] = CRGB(BRIGHTNESS_2, BRIGHTNESS_2, BRIGHTNESS_2);
+    ledsD[80] = CRGB(BRIGHTNESS_2, BRIGHTNESS_2, BRIGHTNESS_2);
     FastLED.show();
     delay(200);
     off();
@@ -400,10 +376,10 @@ void adjustGlobalBrightness(int upOrDown)
   else if (ledBrightnessPreset == 3)
   {
     ledBrightness = BRIGHTNESS_3;
-    for (int i = 50; i < NUM_LEDS_CASE; i++)
-      ledsC[i] = CRGB(BRIGHTNESS_3, BRIGHTNESS_3, BRIGHTNESS_3);
-    for (int i = 0; i < 25; i++)
-      ledsC[i] = CRGB(BRIGHTNESS_3, BRIGHTNESS_3, BRIGHTNESS_3);
+    ledsD[90] = CRGB(BRIGHTNESS_3, BRIGHTNESS_3, BRIGHTNESS_3);
+    ledsD[85] = CRGB(BRIGHTNESS_3, BRIGHTNESS_3, BRIGHTNESS_3);
+    ledsD[80] = CRGB(BRIGHTNESS_3, BRIGHTNESS_3, BRIGHTNESS_3);
+    ledsD[75] = CRGB(BRIGHTNESS_3, BRIGHTNESS_3, BRIGHTNESS_3);
     FastLED.show();
     delay(200);
     off();
@@ -411,8 +387,11 @@ void adjustGlobalBrightness(int upOrDown)
   else if (ledBrightnessPreset == 4)
   {
     ledBrightness = BRIGHTNESS_4;
-    for (int i = 0; i < NUM_LEDS_CASE; i++)
-      ledsC[i] = CRGB(BRIGHTNESS_4, BRIGHTNESS_4, BRIGHTNESS_4);
+    ledsD[90] = CRGB(BRIGHTNESS_4, BRIGHTNESS_4, BRIGHTNESS_4);
+    ledsD[85] = CRGB(BRIGHTNESS_4, BRIGHTNESS_4, BRIGHTNESS_4);
+    ledsD[80] = CRGB(BRIGHTNESS_4, BRIGHTNESS_4, BRIGHTNESS_4);
+    ledsD[75] = CRGB(BRIGHTNESS_4, BRIGHTNESS_4, BRIGHTNESS_4);
+    ledsD[70] = CRGB(BRIGHTNESS_4, BRIGHTNESS_4, BRIGHTNESS_4);
     FastLED.show();
     delay(200);
     off();
@@ -430,7 +409,15 @@ void adjustGlobalBrightness(int upOrDown)
 // should be ran before updating any LEDs with FastLED.show()
 void setGlobalBrightness()
 {
-  // adjust brightness for back LEDs
+  // adjust brightness for desk LEDs
+  for (int i = 0; i < NUM_LEDS_DESK; i++)
+  {
+    if (ledsD[i].red > ledBrightness) {ledsD[i].red = ledBrightness;}
+    if (ledsD[i].green > ledBrightness) {ledsD[i].green = ledBrightness;}
+    if (ledsD[i].blue > ledBrightness) {ledsD[i].blue = ledBrightness;}
+  }
+  
+  // adjust brightness for back case LEDs
   for (int i = 0; i < 100; i++)
   {
     if (ledsC[i].red > ledBrightness) {ledsC[i].red = ledBrightness;}

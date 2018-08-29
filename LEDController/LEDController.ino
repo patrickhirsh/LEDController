@@ -30,17 +30,36 @@
 #include <power_mgt.h>
 #include "IRremote.h"
 
-#define LED_PIN_CASE        7
+/*
+ * This LED controller is tailored for my personal setup,
+ * so if you stumbled accross this through GitHub, here's
+ * a basic rundown:
+ * 
+ * I'm using an arduino UNO with an IR sensor + remote for
+ * switching sequences. IRHandler() implements this functionality.
+ * The strips themselves are in my computer case and on the back
+ * of my desk. The case LEDs (ledsC) are 0-99 in a square (25 per side)
+ * on the back of my case, and 100-111 in a line in front of my GPU.
+ * My desk LEDs (ledsD) are 0-90 in a straight line accross the back
+ * of my desk. The visualizer presets utilize my processing script
+ * (also provided in the github repo) and transfer audio data from the
+ * PC through the Arduino serial port.
+ * 
+ * Hopefully this information makes it easy to take some of the things
+ * I've done and use them in your own setup!
+ */
+
+#define LED_PIN_CASE        7     // the case and desk strips recieve data from seperate pins
 #define LED_PIN_DESK        6
 #define NUM_LEDS_CASE       112
 #define NUM_LEDS_DESK       91
 #define IR_PIN              8
-#define BRIGHTNESS_0        5
+#define BRIGHTNESS_0        5     // brightness presets for adjustGlobalBrightness()
 #define BRIGHTNESS_1        20
 #define BRIGHTNESS_2        65
 #define BRIGHTNESS_3        127
 #define BRIGHTNESS_4        255
-#define GPU_SCALE_FACTOR    5     // scale gpu LED brightness cutoff by this value (GPU LEDs should be brighter than back LEDs)
+#define GPU_SCALE_FACTOR    5     // scale gpu LED brightness cutoff by this value (GPU LEDs should be brighter than back LEDs) for adjustGlobalBrightness()
 
 // control globals
 CRGB ledsC[NUM_LEDS_CASE];        // 0-99: back LEDs (bottom right moving CC); 100-111: GPU LEDs (left to right)
@@ -49,7 +68,7 @@ byte audioIn = 0;                 // processed audio signal normalized to range 
 byte ledMode = 0;                 // determines which LED sequence to run (if ledStatus = 1)
 byte ledStatus = 1;               // 1 = on; 0 = off
 byte ledBrightness = 255;         // global LED brightness, used in the brightness control functions
-byte ledBrightnessPreset = 4;     // 5 presets (0-4). Because of IR occlusion with FastLED, presets make more sense (see IRHandler())
+byte ledBrightnessPreset = 4;     // 5 presets (0-4). Because of IR collusion with FastLED, presets make more sense (see IRHandler())
 
 // IR remote globals
 IRrecv irrecv(IR_PIN);

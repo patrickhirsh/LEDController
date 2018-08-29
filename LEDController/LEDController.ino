@@ -31,6 +31,8 @@
 #include "IRremote.h"
 
 /*
+ *                  SETUP INFORMATION
+ * 
  * This LED controller is tailored for my personal setup,
  * so if you stumbled accross this through GitHub, here's
  * a basic rundown:
@@ -49,7 +51,7 @@
  * I've done and use them in your own setup!
  */
 
-#define LED_PIN_CASE        7     // the case and desk strips recieve data from seperate pins
+#define LED_PIN_CASE        7     // the case and desk strips recieve data from separate pins
 #define LED_PIN_DESK        6
 #define NUM_LEDS_CASE       112
 #define NUM_LEDS_DESK       91
@@ -64,7 +66,6 @@
 // control globals
 CRGB ledsC[NUM_LEDS_CASE];        // 0-99: back LEDs (bottom right moving CC); 100-111: GPU LEDs (left to right)
 CRGB ledsD[NUM_LEDS_DESK];        // 0-91: Moving from left to right on the back of the desk
-byte audioIn = 0;                 // processed audio signal normalized to range 0-255
 byte ledMode = 0;                 // determines which LED sequence to run (if ledStatus = 1)
 byte ledStatus = 1;               // 1 = on; 0 = off
 byte ledBrightness = 255;         // global LED brightness, used in the brightness control functions
@@ -76,8 +77,13 @@ decode_results results;
 
 // stores the current global hue/sat/val for rainbow effects - See dynamicHueShift();
 // modes that use this global typically call dynamicHueShift() to shift hue/sat/val every loop before applying to LEDs
-CHSV dynamicHue = CHSV(0, 255, 255);    
+CHSV dynamicHue = CHSV(0, 255, 255);   
+float vizSpread = 0;
 
+
+// audio globals (updated with sampleAudio())
+byte audioSamples[100];            // buffer containing the last 100 audio samples (0 = most recent)
+byte audioSample = 0;              // processed audio signal normalized to range 0-255
 
 
 
@@ -101,6 +107,10 @@ void setup()
 
   // used in various visualizers for random selection
   randomSeed(analogRead(0));
+
+  // initialize audioSamples buffer
+  for (int i = 0; i < 100; i++)
+    audioSamples[i] = 0;
 }
 
 
@@ -116,14 +126,14 @@ void loop()
   {
     IRHandler();
     irrecv.resume();
-  }
+  } 
   
   // are LEDs active?
   if (ledStatus == 1)
   {
     // run mode specified by ledMode
     if (ledMode == 0)      {red();}
-    else if (ledMode == 8) {mellowVisualizer();}
+    else if (ledMode == 8) {rainbowVisualizer();}
     else if (ledMode == 9) {dynamicVisualizer();}
        
     // non-implemented mode selected. Turn LEDs off
@@ -154,46 +164,60 @@ void red()
 
 
 // NOTE: Arduino should be plugged into a computer running AudioInputProcessor.exe for this mode.
-// a more dynamic visualizer utilizing the full color range
+// a rainbow waterfall visualizer
 void dynamicVisualizer()
 {
   // make sure we're getting input from AudioInputProcessor.exe
   if (Serial.available())
-  {
-    // audioIn is typically a value from 0-127 (but can be as high as 255)
-    audioIn = Serial.read();
-
-    // shift LEDs away from the center LED (37)
+  {    
+    // update audioSample and audioSamples buffer
+    sampleAudio(Serial.read());
+    
+    // shift LEDs away from the center Case LED (37)
     for (int i = 0; i < 37; i++)
       ledsC[i] = ledsC[i+1];
     for (int i = 74; i > 37; i--)
       ledsC[i] = ledsC[i-1];
 
-    // scale audioIn for better visuals
-    if (audioIn*2 > 255)
-      audioIn = 255;
-    else
-      audioIn *= 2;
+    // shifting hue by a factor of audioSample causes colors to shift faster with higher audioSample values
+    if (audioSample > 200) {dynamicHueShift(audioSample/50);}      
+    else {dynamicHueShift(audioSample/100);}      
 
-    // shifting hue by a factor of audioIn causes colors to shift faster with higher audioIn values
-    if (audioIn > 200)
-      dynamicHueShift(audioIn/15);
-    else
-      dynamicHueShift(audioIn/70);
+    // brightness is directly related to audioSample strength
+    dynamicHue.val = audioSample;
 
-    // brightness is directly related to audioIn strength
-    dynamicHue.val = audioIn;
-
-    // set center LED
-    ledsC[37] = dynamicHue;
+    ledsC[37] = dynamicHue;   // set center LED
 
     // sudo "bass reactive" GPU LEDs through additive lighting
     // additive lighting usually reacts more to drawn-out noise (bass frequencies)
     for (int i = 75; i < 112; i++)
     {
-      ledsC[i] += CRGB(audioIn/5, 0, 0);   // additive factor of audioIn
-      ledsC[i] -= CRGB(8, 0, 0);           // reductive constant
-    }
+      ledsC[i] += CRGB(audioSample/5, 0, 0);   // additive factor of audioSample
+      ledsC[i] -= CRGB(8, 0, 0);               // reductive constant
+    }   
+
+    if (vizSpread < 5) {vizSpread -= .2;}     
+    else if (vizSpread < 10) {vizSpread -= .4;}
+    else if (vizSpread < 20) {vizSpread -= .6;}
+    else {vizSpread -= 1;}
+    
+    if (vizSpread < 0) 
+      vizSpread = 0;      
+
+    if (audioSample/5.7 > vizSpread)
+      vizSpread = audioSample/5.7;
+
+    for (int i = 0; i < NUM_LEDS_DESK; i++)
+      ledsD[i] = CRGB(0, 0, 0);
+    for (int i = 45; i < 45 + (int)vizSpread; i++)
+      ledsD[i] = CRGB(255, 0, 0);
+    for (int i = 45; i > 45 - (int)vizSpread; i--)
+      ledsD[i] = CRGB(255, 0, 0);
+
+    float edgeScale = vizSpread - (int)vizSpread;
+    ledsD[45 + (int)vizSpread] = CRGB(255*edgeScale, 0, 0);
+    ledsD[45 - (int)vizSpread] = CRGB(255*edgeScale, 0, 0);
+    
   }
   setGlobalBrightness();
   FastLED.show();
@@ -201,40 +225,63 @@ void dynamicVisualizer()
 
 
 // NOTE: Arduino should be plugged into a computer running AudioInputProcessor.exe for this mode.
-// a relaxed visualizer utilizing only red channels
-void mellowVisualizer()
+// 
+void rainbowVisualizer()
 {
   // make sure we're getting input from AudioInputProcessor.exe
   if (Serial.available())
-  {
-    // audioIn is typically a value from 0-127 (but can be as high as 255)
-    audioIn = Serial.read();
+  {   
+    // update audioSample and audioSamples buffer
+    sampleAudio(Serial.read());
+    
+    // shifting hue by a factor of audioSample causes colors to shift faster with higher audioSample values
+    if (audioSample > 200) {dynamicHueShift(audioSample/15);}     
+    else {dynamicHueShift(audioSample/70);}      
 
-    // shift LEDs away from the center LED (37)
-    for (int i = 0; i < 37; i++)
-      ledsC[i] = ledsC[i+1];
-    for (int i = 74; i > 37; i--)
-      ledsC[i] = ledsC[i-1];
+    int brightness = audioSample;
+    int origin = random(112);
+    int spread = audioSample/5;
+    int upper = origin;
+    int lower = origin;
 
-    // scale audioIn for better visuals
-    if (audioIn*2 > 255)
-      audioIn = 255;
-    else
-      audioIn *= 2;
+    ledsC[origin] += CHSV(dynamicHue.hue, 255, brightness);
+
+    for (int i = 0; i < spread; i++)
+    {
+      upper++;
+      if (upper > 111) {upper = 0;}
+      ledsC[upper] += CHSV(dynamicHue.hue, 255, brightness);
+      brightness /= 1.2;
+    }
+
+    brightness = audioSample;
+    
+    for (int i = 0; i < spread; i++)
+    {
+      if (lower == 0) {lower = 112;}
+      lower--;
+      ledsC[lower] += CHSV(dynamicHue.hue, 255, brightness);
+      brightness /= 1.2;
+    }
+
+    for (int i = 0; i < NUM_LEDS_CASE; i++)
+      ledsC[i] -= CHSV(0, 0, 2);
+
+    // shift LEDs away from the center LED (45)
+    for (int i = 0; i < 45; i++)
+      ledsD[i] = ledsD[i+1];
+    for (int i = NUM_LEDS_DESK - 1; i > 45; i--)
+      ledsD[i] = ledsD[i-1];
+
+    // brightness is directly related to audioSample strength
+    dynamicHue.val = audioSample;
 
     // set center LED
-    ledsC[37].red = audioIn;
-
-    // sudo "bass reactive" GPU LEDs through additive lighting
-    // additive lighting usually reacts more to drawn-out noise (bass frequencies)
-    for (int i = 75; i < 112; i++)
-    {
-      ledsC[i] += CRGB(audioIn/5, 0, 0);   // additive factor of audioIn
-      ledsC[i] -= CRGB(8, 0, 0);           // reductive constant
-    }   
+    ledsD[45] = dynamicHue;
   }
   setGlobalBrightness();
   FastLED.show();
+  
 }
 
 
@@ -401,14 +448,6 @@ void setGlobalBrightness()
 }
 
 
-// turn all LEDs off
-void off()
-{
-  FastLED.clear();
-  FastLED.show();
-}
-
-
 // shifts dynamicHue by the given strength value
 void dynamicHueShift(int strength)
 {
@@ -419,6 +458,30 @@ void dynamicHueShift(int strength)
     else
       dynamicHue.hue++;
   }
+}
+
+
+// updates audioSample and the audioSamples buffer (0 = most current). Should be called every loop
+void sampleAudio(byte rawAudio)
+{
+  // rawAudio is calibrated for max ~127 range at normal listening volume
+  // this is so we could potentially utilize the upper range at louder volumes
+  // for regular use, scale the samples by 2 to utilize the full 255 range
+    if (rawAudio*2 > 255) {rawAudio = 255;}    
+    else {rawAudio *= 2;}
+
+  // shift the buffer and add update latest sample
+  for (int i = 99; i > 0; i--)
+    audioSamples[i] = audioSamples[i-1]; 
+  audioSamples[0] = rawAudio;
+  audioSample = rawAudio;
+}
+
+// turn all LEDs off
+void off()
+{
+  FastLED.clear();
+  FastLED.show();
 }
 
 

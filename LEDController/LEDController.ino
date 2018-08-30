@@ -29,6 +29,7 @@
 #include <platforms.h>
 #include <power_mgt.h>
 #include "IRremote.h"
+#include <math.h>
 
 /*
  *                  SETUP INFORMATION
@@ -51,6 +52,7 @@
  * I've done and use them in your own setup!
  */
 
+// control constants
 #define LED_PIN_CASE        7     // the case and desk strips recieve data from separate pins
 #define LED_PIN_DESK        6
 #define NUM_LEDS_CASE       112
@@ -62,6 +64,7 @@
 #define BRIGHTNESS_3        127
 #define BRIGHTNESS_4        255
 #define GPU_SCALE_FACTOR    5     // scale gpu LED brightness cutoff by this value (GPU LEDs should be brighter than back LEDs) for adjustGlobalBrightness()
+#define SAMPLES             3     // number of audio samples for smoothing. More = smoother reactions. Less = less visual lag and more reactive
 
 // control globals
 CRGB ledsC[NUM_LEDS_CASE];        // 0-99: back LEDs (bottom right moving CC); 100-111: GPU LEDs (left to right)
@@ -173,6 +176,7 @@ void deskVisualizer()
   {    
     // update audioSample and audioSamples buffer
     sampleAudio(Serial.read());
+    processAudio(3, false);
 
     // set case LEDs to static red
     if (ledsC[0].red != 255)
@@ -226,6 +230,7 @@ void caseVisualizer()
   { 
     // update audioSample and audioSamples buffer
     sampleAudio(Serial.read());
+    processAudio(3, true);
     
     // shift LEDs away from the center Case LED (37)   
     for (int i = 0; i < 37; i++)
@@ -397,9 +402,9 @@ void adjustGlobalBrightness(int upOrDown)
     off();
   }
 
-  // note that we don't change the ledMode in this IR signal handler
-  // this causes the ledMode to default back to off after adjusting
-  // brightness. We also only briefly "display" the brightness setting -
+  // Note that we don't change the ledMode in this IR signal handler.
+  // This causes the ledMode to default back to off after adjusting
+  // brightness. We also only *briefly* display the brightness setting -
   // this is to prevent IR signal blocking by the FastLED library.
   // Once the displayed brightness turns off, the handler is ready for
   // another IR signal.
@@ -463,6 +468,24 @@ void sampleAudio(byte rawAudio)
   audioSamples[0] = rawAudio;
   audioSample = rawAudio;
 }
+
+
+// applies smoothing to reduce jitter in visualizers.
+// samples = number of audio samples applied to smoothing
+// more samples = smoother light re
+void processAudio(int samples, bool mapToCurve)
+{
+  // sampling
+  int sum = 0;
+  for (int i = 0; i < SAMPLES; i++)
+    sum += audioSamples[i];  
+  audioSample = sum/samples;
+
+  if (mapToCurve)
+    if (audioSample <= 100)
+      audioSample = sqrt(audioSample)*12.7;
+}
+
 
 // turn all LEDs off
 void off()
